@@ -1,3 +1,4 @@
+import sys
 
 # API
 import json
@@ -26,13 +27,15 @@ ep_stocks_history = "stocks/{symbol}/history/{date}"
 ep_stocks_history_range = "stocks/{symbol}/history/{start_date}/{end_date}"
 
 
+def backtest():
+    print("backtest")
+
+
 def calculate_indicators(list):
     if list:
         df = pd.DataFrame(list)
-        # df.columns = ['id', 'trading_date', 'low',
-        #               'open', 'close', 'high', 'volume', 'symbol']
         df.columns = ['trading_date', 'low', 'open',
-                    'close', 'high', 'volume', 'symbol']
+                      'close', 'high', 'volume', 'symbol']
 
         sdf = StockDataFrame.retype(df)
         sdf.get('macd')
@@ -62,8 +65,13 @@ def convert_to_json(data):
 
 
 def delete_all_stock_history():
-    stocks_history_table.delete_many({})
-    print("All stocks history deleted")
+    sure = input('Are you sure you want to delete all stock history? [Y/N]: ')
+
+    if (sure == 'y' or sure == 'Y'):
+        stocks_history_table.delete_many({})
+        print("All stocks history deleted")
+    else:
+        print("Cancelling delete")
 
 
 def delete_all_stock_information():
@@ -79,6 +87,19 @@ def delete_stock_history(symbol):
 def delete_stock_information(symbol):
     stocks_table.delete({"symbol": symbol})
     print("{symbol} information deleted".format(symbol=symbol))
+
+
+def fetch_all_open_stock_history():
+    sure = input(
+        'Are you sure you want to fetch all open stocks history? You may need to delete all history first. [Y/N]: ')
+
+    if (sure == 'y' or sure == 'Y'):
+        for stock in retrieve_all_stocks_information():
+            if stock['status'] == 'OPEN':
+                calculate_indicators(get_stock_history_range(
+                    stock['ticker_symbol'], "2014-01-01", '2021-06-07'))
+    else:
+        print("Cancelling fetch")
 
 
 def get(endpoint):
@@ -98,6 +119,7 @@ def get_stock_history(symbol, date):
     stocks['low'] = stocks['history']['low']
     stocks['close'] = stocks['history']['close']
     stocks['volume'] = stocks['history']['volume']
+
     del stocks['history']
 
     print("stock history", stocks)
@@ -120,7 +142,6 @@ def get_stock_history_range(symbol, start, end):
 
         del stock['timestamp']
 
-        # save_stock_history(stock)
     return stocks['history']
 
 
@@ -131,35 +152,34 @@ def get_stock_information(symbol):
     print("stock information", stocks)
 
 
-def get_stock_list():
+def get_stocks_information():
     # Get /stocks
     data = get(ep_stocks)
 
     # Convert to Python object
     stocks = json.loads(data.content)
 
-    # Delete stocks
-    delete_all_stock_information()
-
     # Save to database
     save_stocks_information(stocks)
 
 
 def main():
-    # delete_all_stock_information()
-    delete_all_stock_history()
-    # get_stock_list()
-    # get_stock_information("NOW")
-    # get_stock_history("NOW", "2020-01-02")
-    # get_stock_history_range("NOW", "2015-01-01", "2021-06-07")
+    action = input(
+        '\n \
+         1 - Backtest \
+         2 - Fetch Data \
+         3 - Delete All Data\n\n')
 
-    # For retrieving stocks on loop
-    for stock in retrieve_all_stocks_information():
-        if stock['status'] == 'OPEN':
-            calculate_indicators(get_stock_history_range(stock['ticker_symbol'], "2014-01-01", '2021-06-07'))
-    
-    # For testing calculate indicators
-    # calculate_indicators(get_stock_history_range("SRDC", "2015-01-01", "2021-06-07"))
+    if action == '1':
+        backtest()
+    elif action == '2':
+        fetch_all_open_stock_history()
+    elif action == '3':
+        delete_all_stock_history()
+    else:
+        print("not recognized")
+
+    sys.exit(0)
 
 
 def retrieve_all_stocks_information():
@@ -180,7 +200,8 @@ def retrieve_stocks_history(symbol):
 
 def save_stock_history(stock):
     stocks_history_table.insert(stock)
-    print("{symbol} {date}saved".format(symbol=stock['symbol'], date=stock['trading_date']))
+    print("{symbol} {date} SAVED!".format(
+        symbol=stock['symbol'], date=stock['trading_date']))
 
 
 def save_stocks_information(stocks):
