@@ -1,4 +1,5 @@
 import sys
+import time
 
 # API
 import json
@@ -27,8 +28,37 @@ ep_stocks_history = "stocks/{symbol}/history/{date}"
 ep_stocks_history_range = "stocks/{symbol}/history/{start_date}/{end_date}"
 
 
+# Test
+start_date = "2015-01-01"
+
+
 def backtest():
-    print("backtest")
+    stock_choice = input(
+        'Which stock? Type specific stock or type `ALL` to test all stocks: ')
+    if (stock_choice == 'ALL' or stock_choice == 'all'):
+        print("testing all")
+    else:
+        stocks = retrieve_stocks_history(stock_choice.upper())
+
+        buy = True
+        for stock in stocks:
+            converted_start_date = time.strptime(start_date, "%Y-%m-%d")
+            converted_trading_date = time.strptime(
+                stock['trading_date'], "%Y-%m-%d")
+
+            if (converted_start_date <= converted_trading_date):
+                if buy == True:
+                    if (stock['close'] >= stock['close_50_sma']) \
+                        and (stock['close'] >= stock['close_100_sma']) \
+                        and (stock['close_50_sma'] >= stock['close_100_sma']):
+                        buy = False
+                        print("buy here {date}".format(
+                            date=stock['trading_date']))
+                else:
+                    if (stock['close'] <= stock['close_5_sma']):
+                        buy = True
+                        print("sold here {date}".format(
+                            date=stock['trading_date']))
 
 
 def calculate_indicators(list):
