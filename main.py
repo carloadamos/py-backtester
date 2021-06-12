@@ -1,6 +1,5 @@
-from re import S
 import sys
-import time
+from datetime import datetime, timedelta
 
 # API
 import json
@@ -49,8 +48,8 @@ def backtest():
         buy = True
         for stock in stocks:
             i += 1
-            converted_start_date = time.strptime(start_date, "%Y-%m-%d")
-            converted_trading_date = time.strptime(
+            converted_start_date = datetime.strptime(start_date, "%Y-%m-%d")
+            converted_trading_date = datetime.strptime(
                 stock['trading_date'], "%Y-%m-%d")
 
             # Start of trading
@@ -103,8 +102,7 @@ def calculate_indicators(list):
         result = pdframe.to_json(orient="records")
         parsed = json.loads(result)
 
-        for stock in parsed:
-            save_stock_history(stock)
+        return parsed
 
 
 def compute_profit(buy_price, sell_price):
@@ -112,7 +110,7 @@ def compute_profit(buy_price, sell_price):
 
 
 def convert_date(strDate):
-    return time.strptime(strDate, "%Y-%m-%d")
+    return datetime.strptime(strDate, "%Y-%m-%d")
 
 
 def convert_to_json(data):
@@ -151,26 +149,60 @@ def fetch_all_open_stock_history():
     if (sure == 'y' or sure == 'Y'):
         for stock in retrieve_all_stocks_information():
             if stock['status'] == 'OPEN':
-                calculate_indicators(get_stock_history_range(
+                stocks = calculate_indicators(get_stock_history_range(
                     stock['ticker_symbol'], "2014-01-01", '2021-06-07'))
+
+                save_stock_history_list(stocks)
+
     else:
         print("Cancelling fetch")
 
 
-def fetch_open_stock_history_range(stock, from_date, to_date):
+def fetch_all_stock_history_range(stock, last_save, to_date):
+    last_save = convert_date(last_save)
+    from_date = last_save + timedelta(days=1)
+    to_date = convert_date(to_date)
+
     sure = input(
-        'Are you sure you want to fetch stock history for {stock} from {from_date} to {to_date}? : '.format(stock=stock, from_date=from_date, to_date=to_date))
+        'Are you sure you want to fetch stock history for {stock} from {from_date} to {to_date}? : '.format(stock="ALL", from_date=from_date, to_date=to_date))
 
     if (sure == 'y' or sure == 'Y'):
-        last_save = convert_date(retrieve_last_saved_history(stock))
-        from_date = convert_date(from_date)
-        to_date = convert_date(to_date)
-
         if (last_save < from_date and last_save < to_date):
+            from_date = from_date.strftime("%Y-%m-%d")
+            to_date = to_date.strftime("%Y-%m-%d")
             for stock in retrieve_all_stocks_information():
                 if stock['status'] == 'OPEN':
-                    calculate_indicators(get_stock_history_range(
+                    stocks = calculate_indicators(get_stock_history_range(
                         stock['ticker_symbol'], from_date, to_date))
+
+                    save_stock_history_list(stocks)
+
+        else:
+            print("Cannot fetch. Issues with date.")
+    else:
+        print("Cancelling fetch")
+
+
+def fetch_single_stock_history_range(stock, last_save, to_date):
+    last_save = convert_date(last_save)
+    from_date = last_save + timedelta(days=1)
+    to_date = convert_date(to_date)
+    symbol = stock.upper()
+
+    sure = input(
+        'Are you sure you want to fetch stock history for {stock} from {from_date} to {to_date}? : '.format(stock=stock.upper(), from_date=from_date, to_date=to_date))
+
+    if (sure == 'y' or sure == 'Y'):
+        if (last_save < from_date and last_save < to_date):
+            from_date = from_date.strftime("%Y-%m-%d")
+            to_date = to_date.strftime("%Y-%m-%d")
+            for stock in retrieve_stocks_information(symbol):
+                if stock['status'] == 'OPEN':
+                    stocks = calculate_indicators(get_stock_history_range(
+                        symbol, from_date, to_date))
+
+                    save_stock_history_list(stocks)
+
         else:
             print("Cannot fetch. Issues with date.")
     else:
@@ -199,6 +231,8 @@ def get_stock_history(symbol, date):
 
 
 def get_stock_history_range(symbol, start, end):
+    print(ep_stocks_history_range.format(
+        symbol=symbol, start_date=start, end_date=end))
     data = get(ep_stocks_history_range.format(
         symbol=symbol, start_date=start, end_date=end))
 
@@ -257,8 +291,9 @@ def main():
         '\n \
          1 - Backtest \
          2 - Fetch Data \
-         3 - Fetch Data (Range)\
-         4 - Delete All Data\n\n')
+         3 - Fetch Data XXX (Range)\
+         4 - Fetch Data ALL (Range)\
+         5 - Delete All Data\n\n')
 
     if action == '1':
         backtest()
@@ -266,13 +301,21 @@ def main():
         fetch_all_open_stock_history()
     elif action == '3':
         symbol = input('Stock symbol: ("XXX"): ')
-        print("Last saved stock history {last_save}".format(
-            last_save=retrieve_last_saved_history(symbol)))
-        from_date = input('From date: ("YYYY-MM-DD"): ')
-        to_date = input('From date: ("YYYY-MM-DD"): ')
+        last_save = retrieve_last_saved_history(symbol)
+        print("\nLast saved stock history {last_save}\n".format(
+            last_save=last_save))
+        to_date = input('To date: ("YYYY-MM-DD"): ')
 
-        fetch_open_stock_history_range(symbol, from_date, to_date)
+        fetch_single_stock_history_range(symbol, last_save, to_date)
     elif action == '4':
+        symbol = "NOW"
+        last_save = retrieve_last_saved_history(symbol)
+        print("\nLast saved stock history {last_save}\n".format(
+            last_save=last_save))
+        to_date = input('To date: ("YYYY-MM-DD"): ')
+
+        fetch_all_stock_history_range(symbol, last_save, to_date)
+    elif action == '5':
         delete_all_stock_history()
     else:
         print("not recognized")
@@ -293,7 +336,7 @@ def retrieve_last_saved_history(stock):
 
 
 def retrieve_stocks_information(symbol):
-    return list(stocks_table.find({"symbol": symbol}))
+    return list(stocks_table.find({"ticker_symbol": symbol}))
 
 
 def retrieve_stocks_history(symbol):
@@ -304,6 +347,12 @@ def save_stock_history(stock):
     stocks_history_table.insert(stock)
     print("{symbol} {date} SAVED!".format(
         symbol=stock['symbol'], date=stock['trading_date']))
+
+
+def save_stock_history_list(stocks):
+    if (stocks):
+        for stock in stocks:
+            save_stock_history(stock)
 
 
 def save_stocks_information(stocks):
