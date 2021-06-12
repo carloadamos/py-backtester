@@ -1,3 +1,4 @@
+from re import S
 import sys
 import time
 
@@ -33,6 +34,10 @@ start_date = "2015-01-01"
 
 
 def backtest():
+
+    txns = []
+    i = 0
+
     stock_choice = input(
         'Which stock? Type specific stock or type `ALL` to test all stocks: ')
     if (stock_choice == 'ALL' or stock_choice == 'all'):
@@ -40,25 +45,37 @@ def backtest():
     else:
         stocks = retrieve_stocks_history(stock_choice.upper())
 
+        txn = {}
         buy = True
         for stock in stocks:
+            i += 1
             converted_start_date = time.strptime(start_date, "%Y-%m-%d")
             converted_trading_date = time.strptime(
                 stock['trading_date'], "%Y-%m-%d")
 
+            # Start of trading
             if (converted_start_date <= converted_trading_date):
+
                 if buy == True:
                     if (stock['close'] >= stock['close_50_sma']) \
-                        and (stock['close'] >= stock['close_100_sma']) \
-                        and (stock['close_50_sma'] >= stock['close_100_sma']):
+                            and (stock['close'] >= stock['close_100_sma']) \
+                            and (stock['close_50_sma'] >= stock['close_100_sma']):  # \
+                        # and is_macd_crossver(stocks[i-2], stock):
+                        txn = trade(stock, buy, 5000)
+
                         buy = False
-                        print("buy here {date}".format(
-                            date=stock['trading_date']))
                 else:
                     if (stock['close'] <= stock['close_5_sma']):
+                        txn = trade(stock, buy, 5000, txn)
+                        pnl = compute_profit(
+                            txn['buy_price'], txn['sell_price'])
+                        txn['pnl'] = pnl
+                        txns.append(txn)
+
                         buy = True
-                        print("sold here {date}".format(
-                            date=stock['trading_date']))
+
+    for txn in txns:
+        print(txn)
 
 
 def calculate_indicators(list):
@@ -88,6 +105,14 @@ def calculate_indicators(list):
 
         for stock in parsed:
             save_stock_history(stock)
+
+
+def compute_profit(buy_price, sell_price):
+    return (((sell_price - buy_price) / buy_price) * 100)
+
+
+def convert_date(strDate):
+    return time.strptime(strDate, "%Y-%m-%d")
 
 
 def convert_to_json(data):
@@ -132,6 +157,26 @@ def fetch_all_open_stock_history():
         print("Cancelling fetch")
 
 
+def fetch_open_stock_history_range(stock, from_date, to_date):
+    sure = input(
+        'Are you sure you want to fetch stock history for {stock} from {from_date} to {to_date}? : '.format(stock=stock, from_date=from_date, to_date=to_date))
+
+    if (sure == 'y' or sure == 'Y'):
+        last_save = convert_date(retrieve_last_saved_history(stock))
+        from_date = convert_date(from_date)
+        to_date = convert_date(to_date)
+
+        if (last_save < from_date and last_save < to_date):
+            for stock in retrieve_all_stocks_information():
+                if stock['status'] == 'OPEN':
+                    calculate_indicators(get_stock_history_range(
+                        stock['ticker_symbol'], from_date, to_date))
+        else:
+            print("Cannot fetch. Issues with date.")
+    else:
+        print("Cancelling fetch")
+
+
 def get(endpoint):
     data = requests.get(baseUrl.format(endpoint=endpoint))
     return data
@@ -151,8 +196,6 @@ def get_stock_history(symbol, date):
     stocks['volume'] = stocks['history']['volume']
 
     del stocks['history']
-
-    print("stock history", stocks)
 
 
 def get_stock_history_range(symbol, start, end):
@@ -193,18 +236,43 @@ def get_stocks_information():
     save_stocks_information(stocks)
 
 
+def is_macd_crossover(prev_stock, curr_stock):
+    if (prev_stock['macd'] <= prev_stock['macds']) \
+            and (curr_stock['macd'] > curr_stock['macds']):
+        True
+
+    return False
+
+
+def is_macd_crossunder(prev_stock, curr_stock):
+    if (prev_stock['macd'] >= prev_stock['macds']) \
+            and (curr_stock['macd'] < curr_stock['macds']):
+        True
+
+    return False
+
+
 def main():
     action = input(
         '\n \
          1 - Backtest \
          2 - Fetch Data \
-         3 - Delete All Data\n\n')
+         3 - Fetch Data (Range)\
+         4 - Delete All Data\n\n')
 
     if action == '1':
         backtest()
     elif action == '2':
         fetch_all_open_stock_history()
     elif action == '3':
+        symbol = input('Stock symbol: ("XXX"): ')
+        print("Last saved stock history {last_save}".format(
+            last_save=retrieve_last_saved_history(symbol)))
+        from_date = input('From date: ("YYYY-MM-DD"): ')
+        to_date = input('From date: ("YYYY-MM-DD"): ')
+
+        fetch_open_stock_history_range(symbol, from_date, to_date)
+    elif action == '4':
         delete_all_stock_history()
     else:
         print("not recognized")
@@ -218,6 +286,10 @@ def retrieve_all_stocks_information():
 
 def retrieve_all_stocks_history():
     return list(stocks_history_table.find())
+
+
+def retrieve_last_saved_history(stock):
+    return list(stocks_history_table.find({"symbol": stock.upper()}).sort("_id", pymongo.DESCENDING).limit(1))[0]['trading_date']
 
 
 def retrieve_stocks_information(symbol):
@@ -237,6 +309,17 @@ def save_stock_history(stock):
 def save_stocks_information(stocks):
     stocks_table.insert_many(stocks['stocks'])
     print("All stocks saved")
+
+
+def trade(stock, buy, trade_capital=0, txn={}):
+    if buy == True:
+        txn = {"code": stock['symbol'], "buy_date": stock['trading_date'],
+               "buy_price": stock['close'], "bought_shares": int(trade_capital/stock['close'])}
+    else:
+        txn["sell_date"] = stock['trading_date']
+        txn["sell_price"] = stock['close']
+
+    return txn
 
 
 main()
