@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 
 # API
 import json
-from pandas.core.frame import DataFrame
 import requests
 
 # Stocks
@@ -27,13 +26,14 @@ ep_stock_info = "stocks/{symbol}"
 ep_stocks_history = "stocks/{symbol}/history/{date}"
 ep_stocks_history_range = "stocks/{symbol}/history/{start_date}/{end_date}"
 
-
 # Test
 start_date = "2015-01-01"
+capital = 100000
 
 
 def backtest():
 
+    all_win_rate = []
     txns = []
     i = 0
 
@@ -73,8 +73,13 @@ def backtest():
 
                         buy = True
 
-    for txn in txns:
-        print(txn)
+        win_rate = calculate_win_rate(stock_choice.upper(), txns)
+        all_win_rate.append(win_rate)
+
+        print(pd.DataFrame(all_win_rate))
+
+    # for txn in txns:
+    #     print(txn)
 
 
 def calculate_indicators(list):
@@ -103,6 +108,81 @@ def calculate_indicators(list):
         parsed = json.loads(result)
 
         return parsed
+
+
+def calculate_win_rate(symbol, txns):
+    df = pd.DataFrame(txns)
+    pd.set_option('display.max_rows', 10000)
+
+    print(df)
+
+    if len(txns) == 0:
+        return {
+            "symbol": symbol,
+            "win_rate": 0,
+            "wins": 0,
+            "avg_win": 0,
+            "max_win": 0,
+            "loss": 0,
+            "avg_loss": 0,
+            "max_loss": 0,
+            "total_trade": 0,
+            "total": 0,
+            "total_capital": 0
+        }
+
+    avg_win = 0
+    avg_loss = 0
+    has_open_position = False
+    loss = 0
+    total = 0
+    valid_txns = len(txns)
+    win_rate = 0
+    wins = 0
+    winning_trade = 0
+
+    # For scenario where:
+    # there is only one transaction and
+    # it is still open
+    try:
+        max_loss = df['pnl'].min() < 0 and df['pnl'].min() or 0
+        max_win = df['pnl'].max() > 0 and df['pnl'].max() or 0
+    except:
+        max_loss = 0
+        max_win = 0
+
+    for txn in txns:
+        try:
+            pnl = txn['pnl']
+            total += pnl
+            if pnl > 0:
+                winning_trade += 1
+                wins += pnl
+            else:
+                loss += pnl
+        except:
+            has_open_position = True
+
+        valid_txns = has_open_position and (
+            valid_txns - 1) or valid_txns
+
+    if winning_trade != 0:
+        win_rate = round(winning_trade/valid_txns * 100, 2)
+        avg_win = wins != 0 and round(wins/winning_trade, 2) or 0
+        avg_loss = loss != 0 and round(loss/(valid_txns-winning_trade), 2) or 0
+
+    return {
+        "symbol": symbol,
+        "win_rate": win_rate,
+        "wins": winning_trade,
+        "avg_win": avg_win,
+        "max_win": max_win,
+        "loss": valid_txns - winning_trade,
+        "avg_loss": avg_loss,
+        "max_loss": max_loss,
+        "total_trade": valid_txns,
+        "total": round(total, 2),
+        "total_capital": round(capital, 2)}
 
 
 def compute_profit(buy_price, sell_price):
