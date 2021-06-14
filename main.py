@@ -29,57 +29,85 @@ ep_stocks_history_range = "stocks/{symbol}/history/{start_date}/{end_date}"
 # Test
 start_date = "2015-01-01"
 capital = 100000
+COMM_RATE = 1.20
 
 
 def backtest():
-
     all_win_rate = []
     txns = []
-    i = 0
 
     stock_choice = input(
         'Which stock? Type specific stock or type `ALL` to test all stocks: ')
     if (stock_choice == 'ALL' or stock_choice == 'all'):
         print("testing all")
+        for stock in retrieve_all_stocks_information():
+            if (stock['status'] == 'OPEN'):
+                print(stock['ticker_symbol'])
+
     else:
         stocks = retrieve_stocks_history(stock_choice.upper())
 
-        txn = {}
-        buy = True
-        for stock in stocks:
-            i += 1
-            converted_start_date = datetime.strptime(start_date, "%Y-%m-%d")
-            converted_trading_date = datetime.strptime(
-                stock['trading_date'], "%Y-%m-%d")
-
-            # Start of trading
-            if (converted_start_date <= converted_trading_date):
-
-                if buy == True:
-                    if (stock['close'] >= stock['close_50_sma']) \
-                            and (stock['close'] >= stock['close_100_sma']) \
-                            and (stock['close_50_sma'] >= stock['close_100_sma']):  # \
-                        # and is_macd_crossver(stocks[i-2], stock):
-                        txn = trade(stock, buy, 5000)
-
-                        buy = False
-                else:
-                    if (stock['close'] <= stock['close_5_sma']):
-                        txn = trade(stock, buy, 5000, txn)
-                        pnl = compute_profit(
-                            txn['buy_price'], txn['sell_price'])
-                        txn['pnl'] = pnl
-                        txns.append(txn)
-
-                        buy = True
+        txns.extend(backtest_start(stocks))
 
         win_rate = calculate_win_rate(stock_choice.upper(), txns)
         all_win_rate.append(win_rate)
 
         print(pd.DataFrame(all_win_rate))
 
-    # for txn in txns:
-    #     print(txn)
+
+def backtest_start(stocks):
+    txn = {}
+    txns = []
+    buy = True
+    i = 0
+
+    for stock in stocks:
+        i += 1
+        prev_stock = stocks[i-2]
+        converted_start_date = datetime.strptime(start_date, "%Y-%m-%d")
+        converted_trading_date = datetime.strptime(
+            stock['trading_date'], "%Y-%m-%d")
+
+        # CURRENT
+        close_price = stock['close']
+        open_price = stock['open']
+        ma5 = stock['close_5_sma']
+        ma20 = stock['close_20_sma']
+        ma50 = stock['close_50_sma']
+        ma100 = stock['close_100_sma']
+        macd = stock['macd']
+        macds = stock['macds']
+
+        # PREVIOUS
+        prev_ma5 = prev_stock['close_5_sma']
+        prev_ma20 = prev_stock['close_20_sma']
+        prev_ma50 = prev_stock['close_50_sma']
+
+        # Start of trading
+        if (converted_start_date <= converted_trading_date):
+            if buy == True:
+                # if (stock['close'] >= stock['close_50_sma']) \
+                #         and (stock['close'] >= stock['close_100_sma']) \
+                #         and (stock['close_50_sma'] >= stock['close_100_sma']) \
+                #         and is_macd_above_macds(stock):
+                if ((less_than(prev_ma5, prev_ma50) and greater_than(ma5, ma50))
+                    and greater_than(close_price, ma5)
+                    and greater_than(close_price, ma100)
+                    and greater_than(macd, macds)):
+                    # and is_macd_crossover(prev_stock, stock)):
+                    txn = trade(stock, buy, 5000)
+
+                    buy = False
+            else:
+                if (stock['close'] <= stock['close_20_sma']):
+                    txn = trade(stock, buy, 5000, txn)
+                    pnl = compute_pnl(txn)
+                    txn['pnl'] = pnl
+                    txns.append(txn)
+
+                    buy = True
+
+    return txns
 
 
 def calculate_indicators(list):
@@ -183,6 +211,10 @@ def calculate_win_rate(symbol, txns):
         "total_trade": valid_txns,
         "total": round(total, 2),
         "total_capital": round(capital, 2)}
+
+
+def compute_pnl(txn):
+    return round(compute_profit(txn['buy_price'], txn['sell_price']) - COMM_RATE, 2)
 
 
 def compute_profit(buy_price, sell_price):
@@ -350,10 +382,22 @@ def get_stocks_information():
     save_stocks_information(stocks)
 
 
+def less_than(first_param, second_param):
+    return first_param < second_param
+
+
+def greater_than(first_param, second_param):
+    return first_param > second_param
+
+
+def is_macd_above_macds(stock):
+    return stock['macd'] > stock['macds']
+
+
 def is_macd_crossover(prev_stock, curr_stock):
     if (prev_stock['macd'] <= prev_stock['macds']) \
             and (curr_stock['macd'] > curr_stock['macds']):
-        True
+        return True
 
     return False
 
@@ -440,7 +484,7 @@ def save_stocks_information(stocks):
     print("All stocks saved")
 
 
-def trade(stock, buy, trade_capital=0, txn={}):
+def trade(stock, buy, trade_capital=capital, txn={}):
     if buy == True:
         txn = {"code": stock['symbol'], "buy_date": stock['trading_date'],
                "buy_price": stock['close'], "bought_shares": int(trade_capital/stock['close'])}
