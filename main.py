@@ -27,7 +27,7 @@ ep_stocks_history = "stocks/{symbol}/history/{date}"
 ep_stocks_history_range = "stocks/{symbol}/history/{start_date}/{end_date}"
 
 # Test
-start_date = "2015-01-01"
+start_date = "2012-01-01"
 capital = 100000
 COMM_RATE = 1.20
 
@@ -38,21 +38,27 @@ def backtest():
 
     stock_choice = input(
         'Which stock? Type specific stock or type `ALL` to test all stocks: ')
+
+    print('Testing in progress ...')
     if (stock_choice == 'ALL' or stock_choice == 'all'):
-        print("testing all")
         for stock in retrieve_all_stocks_information():
+            symbol = stock['ticker_symbol']
+
             if (stock['status'] == 'OPEN'):
-                print(stock['ticker_symbol'])
+                stocks = retrieve_stocks_history(symbol)
+                txns.extend(backtest_start(stocks))
+                win_rate = calculate_win_rate(symbol, txns)
+                all_win_rate.append(win_rate)
 
     else:
         stocks = retrieve_stocks_history(stock_choice.upper())
-
         txns.extend(backtest_start(stocks))
-
         win_rate = calculate_win_rate(stock_choice.upper(), txns)
         all_win_rate.append(win_rate)
 
-        print(pd.DataFrame(all_win_rate))
+    print('Test complete. See result below')
+    print(pd.DataFrame(txns))
+    print(pd.DataFrame(all_win_rate))
 
 
 def backtest_start(stocks):
@@ -71,6 +77,7 @@ def backtest_start(stocks):
         # CURRENT
         close_price = stock['close']
         open_price = stock['open']
+        high_price = stock['high']
         ma5 = stock['close_5_sma']
         ma20 = stock['close_20_sma']
         ma50 = stock['close_50_sma']
@@ -82,30 +89,77 @@ def backtest_start(stocks):
         prev_ma5 = prev_stock['close_5_sma']
         prev_ma20 = prev_stock['close_20_sma']
         prev_ma50 = prev_stock['close_50_sma']
+        prev_ma100 = prev_stock['close_100_sma']
 
         # Start of trading
-        if (converted_start_date <= converted_trading_date):
+        if ((converted_start_date <= converted_trading_date)
+        and stock['20dayhigh'] is not None):
             if buy == True:
-                # if (stock['close'] >= stock['close_50_sma']) \
-                #         and (stock['close'] >= stock['close_100_sma']) \
-                #         and (stock['close_50_sma'] >= stock['close_100_sma']) \
-                #         and is_macd_above_macds(stock):
-                if ((less_than(prev_ma5, prev_ma50) and greater_than(ma5, ma50))
-                    and greater_than(close_price, ma5)
-                    and greater_than(close_price, ma100)
-                    and greater_than(macd, macds)):
-                    # and is_macd_crossover(prev_stock, stock)):
+                if (candle_above(stock, ma50)
+                and stock['20dayhigh'] > prev_stock['20dayhigh']
+                and prev_stock['20dayhigh'] != prev_stock['close']):
+                # and close_price > ma100):
                     txn = trade(stock, buy, 5000)
 
                     buy = False
             else:
-                if (stock['close'] <= stock['close_20_sma']):
+                curr_pnl = compute_profit(txn['buy_price'], stock['close'])
+                top_wick = compute_profit(high_price, close_price)
+
+                # Sell
+                if (is_crossover(prev_stock, stock, 'close_50_sma', 'close_20_sma')):
                     txn = trade(stock, buy, 5000, txn)
                     pnl = compute_pnl(txn)
                     txn['pnl'] = pnl
+                    txn['gl'] = pnl > 0 and 'GAIN' or '----'
+                    txn['sold_by'] = 'Crossunder'
                     txns.append(txn)
 
                     buy = True
+
+                # Stop loss
+                elif (curr_pnl <= -5.0):
+                    txn = trade(stock, buy, 5000, txn)
+                    pnl = compute_pnl(txn)
+                    txn['pnl'] = pnl
+                    txn['gl'] = pnl > 0 and 'GAIN' or '----'
+                    txn['sold_by'] = 'Stoploss'
+                    txns.append(txn)
+
+                    buy = True
+
+                elif (stock['10daymin'] < prev_stock['10daymin']
+                and prev_stock['10daymin'] != prev_stock['close']):
+                    txn = trade(stock, buy, 5000, txn)
+                    pnl = compute_pnl(txn)
+                    txn['pnl'] = pnl
+                    txn['gl'] = pnl > 0 and 'GAIN' or '----'
+                    txn['sold_by'] = '20daymin'
+                    txns.append(txn)
+
+                    buy = True
+
+
+                # Wick stop
+                # elif (top_wick <= -10):
+                #     txn = trade(stock, buy, 5000, txn)
+                #     pnl = compute_pnl(txn)
+                #     txn['pnl'] = pnl
+                #     txn['gl'] = pnl > 0 and 'GAIN' or '----'
+                #     txn['sold_by'] = 'Wickstop'
+                #     txns.append(txn)
+
+                #     buy = True
+
+                # Trail stop
+                # elif (stock['close'] <= stock['close_10_ema']):
+                #     txn = trade(stock, buy, 5000, txn)
+                #     pnl = compute_pnl(txn)
+                #     txn['pnl'] = pnl
+                #     txn['sold_by'] = 'Trailstop'
+                #     txns.append(txn)
+
+                #     buy = True
 
     return txns
 
@@ -115,6 +169,17 @@ def calculate_indicators(list):
         df = pd.DataFrame(list)
         df.columns = ['trading_date', 'low', 'open',
                       'close', 'high', 'volume', 'symbol']
+        df["200dayhigh"] = df['close'].rolling(window=200).max()
+        df["100dayhigh"] = df['close'].rolling(window=100).max()
+        df["50dayhigh"] = df['close'].rolling(window=51).max()
+        df["20dayhigh"] = df['close'].rolling(window=20).max()
+        df["10dayhigh"] = df['close'].rolling(window=10).max()
+        df["200daymin"] = df['close'].rolling(window=200).min()
+        df["100daymin"] = df['close'].rolling(window=100).min()
+        df["50daymin"] = df['close'].rolling(window=51).min()
+        df["20daymin"] = df['close'].rolling(window=20).min()
+        df["10daymin"] = df['close'].rolling(window=10).min()
+
 
         sdf = StockDataFrame.retype(df)
         sdf.get('macd')
@@ -141,8 +206,6 @@ def calculate_indicators(list):
 def calculate_win_rate(symbol, txns):
     df = pd.DataFrame(txns)
     pd.set_option('display.max_rows', 10000)
-
-    print(df)
 
     if len(txns) == 0:
         return {
@@ -213,6 +276,10 @@ def calculate_win_rate(symbol, txns):
         "total_capital": round(capital, 2)}
 
 
+def candle_above(stock, value):
+    return (stock['open'] > value and stock['close'] > value)
+
+
 def compute_pnl(txn):
     return round(compute_profit(txn['buy_price'], txn['sell_price']) - COMM_RATE, 2)
 
@@ -262,7 +329,7 @@ def fetch_all_open_stock_history():
         for stock in retrieve_all_stocks_information():
             if stock['status'] == 'OPEN':
                 stocks = calculate_indicators(get_stock_history_range(
-                    stock['ticker_symbol'], "2014-01-01", '2021-06-07'))
+                    stock['ticker_symbol'], "2010-01-01", '2021-06-26'))
 
                 save_stock_history_list(stocks)
 
@@ -388,6 +455,25 @@ def less_than(first_param, second_param):
 
 def greater_than(first_param, second_param):
     return first_param > second_param
+
+
+def is_crossover(prev, curr, prop1, prop2):
+    return (prev[prop1] <= prev[prop2]) and (curr[prop1] > curr[prop2])
+
+
+def is_decreasing(prev_stock, curr_stock, param):
+    return prev_stock[param] > curr_stock[param]
+
+
+def is_increasing(prev_stock, curr_stock, param):
+    return prev_stock[param] < curr_stock[param]
+
+
+def is_line_breakout(stock, prop):
+    open_price = stock['open']
+    close_price = stock['close']
+
+    return open_price < stock[prop] and close_price > stock[prop]
 
 
 def is_macd_above_macds(stock):
