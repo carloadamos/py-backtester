@@ -93,12 +93,10 @@ def backtest_start(stocks):
 
         # Start of trading
         if ((converted_start_date <= converted_trading_date)
-        and stock['20dayhigh'] is not None):
+        and prev_stock['20dayhigh'] is not None):
             if buy == True:
-                if (candle_above(stock, ma50)
-                and stock['20dayhigh'] > prev_stock['20dayhigh']
+                if (stock['20dayhigh'] > prev_stock['20dayhigh']
                 and prev_stock['20dayhigh'] != prev_stock['close']):
-                # and close_price > ma100):
                     txn = trade(stock, buy, 5000)
 
                     buy = False
@@ -419,7 +417,7 @@ def get_stock_history_range(symbol, start, end):
 
     for stock in stocks['history']:
         stock['symbol'] = symbol
-        stock['trading_date'] = stock['trading_date']
+        stock['trading_date'] = datetime.strptime(stock['trading_date'], "%Y-%m-%d")
         stock['open'] = stock['open']
         stock['high'] = stock['high']
         stock['low'] = stock['low']
@@ -554,7 +552,7 @@ def retrieve_stocks_history(symbol):
 
 
 def save_stock_history(stock):
-    stocks_history_table.insert(stock)
+    stocks_history_table.insert_one(stock)
     print("{symbol} {date} SAVED!".format(
         symbol=stock['symbol'], date=stock['trading_date']))
 
