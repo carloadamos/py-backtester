@@ -71,8 +71,8 @@ def backtest_start(stocks):
         i += 1
         prev_stock = stocks[i-2]
         converted_start_date = datetime.strptime(start_date, "%Y-%m-%d")
-        converted_trading_date = datetime.strptime(
-            stock['trading_date'], "%Y-%m-%d")
+        converted_trading_date = datetime.fromtimestamp(
+            stock['trading_date'] / 1e3)
 
         # CURRENT
         close_price = stock['close']
@@ -93,10 +93,10 @@ def backtest_start(stocks):
 
         # Start of trading
         if ((converted_start_date <= converted_trading_date)
-        and prev_stock['20dayhigh'] is not None):
+                and (prev_stock['20dayhigh'] is not None and stock['20dayhigh'] is not None)):
             if buy == True:
                 if (stock['20dayhigh'] > prev_stock['20dayhigh']
-                and prev_stock['20dayhigh'] != prev_stock['close']):
+                        and prev_stock['20dayhigh'] != prev_stock['close']):
                     txn = trade(stock, buy, 5000)
 
                     buy = False
@@ -127,7 +127,7 @@ def backtest_start(stocks):
                     buy = True
 
                 elif (stock['10daymin'] < prev_stock['10daymin']
-                and prev_stock['10daymin'] != prev_stock['close']):
+                      and prev_stock['10daymin'] != prev_stock['close']):
                     txn = trade(stock, buy, 5000, txn)
                     pnl = compute_pnl(txn)
                     txn['pnl'] = pnl
@@ -136,7 +136,6 @@ def backtest_start(stocks):
                     txns.append(txn)
 
                     buy = True
-
 
                 # Wick stop
                 # elif (top_wick <= -10):
@@ -177,7 +176,6 @@ def calculate_indicators(list):
         df["50daymin"] = df['close'].rolling(window=51).min()
         df["20daymin"] = df['close'].rolling(window=20).min()
         df["10daymin"] = df['close'].rolling(window=10).min()
-
 
         sdf = StockDataFrame.retype(df)
         sdf.get('macd')
@@ -417,7 +415,8 @@ def get_stock_history_range(symbol, start, end):
 
     for stock in stocks['history']:
         stock['symbol'] = symbol
-        stock['trading_date'] = datetime.strptime(stock['trading_date'], "%Y-%m-%d")
+        stock['trading_date'] = datetime.strptime(
+            stock['trading_date'], "%Y-%m-%d")
         stock['open'] = stock['open']
         stock['high'] = stock['high']
         stock['low'] = stock['low']
@@ -548,7 +547,7 @@ def retrieve_stocks_information(symbol):
 
 
 def retrieve_stocks_history(symbol):
-    return list(stocks_history_table.find({"symbol": symbol}))
+    return list(stocks_history_table.find({"symbol": symbol}).sort("trading_date", pymongo.ASCENDING))
 
 
 def save_stock_history(stock):
@@ -569,11 +568,14 @@ def save_stocks_information(stocks):
 
 
 def trade(stock, buy, trade_capital=capital, txn={}):
+    trade_date = datetime.fromtimestamp(
+        stock['trading_date'] / 1e3).strftime("%Y-%m-%d")
+
     if buy == True:
-        txn = {"code": stock['symbol'], "buy_date": stock['trading_date'],
+        txn = {"code": stock['symbol'], "buy_date": trade_date,
                "buy_price": stock['close'], "bought_shares": int(trade_capital/stock['close'])}
     else:
-        txn["sell_date"] = stock['trading_date']
+        txn["sell_date"] = trade_date
         txn["sell_price"] = stock['close']
 
     return txn
