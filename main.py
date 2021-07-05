@@ -76,28 +76,16 @@ def backtest_start(stocks):
 
         # CURRENT
         close_price = stock['close']
-        open_price = stock['open']
         high_price = stock['high']
-        ma5 = stock['close_5_sma']
-        ma20 = stock['close_20_sma']
-        ma50 = stock['close_50_sma']
-        ma100 = stock['close_100_sma']
-        macd = stock['macd']
-        macds = stock['macds']
-
-        # PREVIOUS
-        prev_ma5 = prev_stock['close_5_sma']
-        prev_ma20 = prev_stock['close_20_sma']
-        prev_ma50 = prev_stock['close_50_sma']
-        prev_ma100 = prev_stock['close_100_sma']
-
+        
         # Start of trading
         if ((converted_start_date <= converted_trading_date)
                 and (prev_stock['20dayhigh'] is not None and stock['20dayhigh'] is not None)):
+
             if buy == True:
                 if (stock['20dayhigh'] > prev_stock['20dayhigh']
                         and prev_stock['20dayhigh'] != prev_stock['close']):
-                    txn = trade(stock, buy, 5000)
+                    txn = trade(stock, buy, capital*.1) #10 percent of capital
 
                     buy = False
             else:
@@ -201,7 +189,7 @@ def calculate_indicators(list):
 
 def calculate_win_rate(symbol, txns):
     df = pd.DataFrame(txns)
-    pd.set_option('display.max_rows', 10000)
+    pd.set_option('display.max_rows', None)
 
     if len(txns) == 0:
         return {
@@ -223,6 +211,7 @@ def calculate_win_rate(symbol, txns):
     has_open_position = False
     loss = 0
     total = 0
+    total_amount = 0
     valid_txns = len(txns)
     win_rate = 0
     wins = 0
@@ -242,6 +231,7 @@ def calculate_win_rate(symbol, txns):
         try:
             pnl = txn['pnl']
             total += pnl
+            total_amount += txn['pnl_amount']
             if pnl > 0:
                 winning_trade += 1
                 wins += pnl
@@ -269,7 +259,8 @@ def calculate_win_rate(symbol, txns):
         "max_loss": max_loss,
         "total_trade": valid_txns,
         "total": round(total, 2),
-        "total_capital": round(capital, 2)}
+        "total_capital": round(capital, 2),
+        "total_pnl_amount": total_amount}
 
 
 def candle_above(stock, value):
@@ -570,13 +561,16 @@ def save_stocks_information(stocks):
 def trade(stock, buy, trade_capital=capital, txn={}):
     trade_date = datetime.fromtimestamp(
         stock['trading_date'] / 1e3).strftime("%Y-%m-%d")
+    bought_shares = int(trade_capital/stock['close'])
 
     if buy == True:
         txn = {"code": stock['symbol'], "buy_date": trade_date,
-               "buy_price": stock['close'], "bought_shares": int(trade_capital/stock['close'])}
+               "buy_price": stock['close'], "bought_shares": bought_shares, "bought_amount": bought_shares * stock['close']}
     else:
         txn["sell_date"] = trade_date
         txn["sell_price"] = stock['close']
+        txn["sold_amount"] = txn['bought_shares'] * stock['close']
+        txn["pnl_amount"] = abs(txn['bought_amount'] - txn['sold_amount'])
 
     return txn
 
