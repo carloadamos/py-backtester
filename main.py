@@ -77,20 +77,21 @@ def backtest_start(stocks):
         # CURRENT
         close_price = stock['close']
         high_price = stock['high']
-        
+
         # Start of trading
         if ((converted_start_date <= converted_trading_date)
                 and (prev_stock['20dayhigh'] is not None and stock['20dayhigh'] is not None)):
 
             if buy == True:
                 if (stock['20dayhigh'] > prev_stock['20dayhigh']
-                        and prev_stock['20dayhigh'] != prev_stock['close']):
-                    txn = trade(stock, buy, capital*.1) #10 percent of capital
+                    and prev_stock['20dayhigh'] != prev_stock['close']
+                        and stock['rsi_14'] > 70):
+                    # 10 percent of capital
+                    txn = trade(stock, buy, capital*.1)
 
                     buy = False
             else:
                 curr_pnl = compute_profit(txn['buy_price'], stock['close'])
-                top_wick = compute_profit(high_price, close_price)
 
                 # Sell
                 if (is_crossover(prev_stock, stock, 'close_50_sma', 'close_20_sma')):
@@ -124,27 +125,6 @@ def backtest_start(stocks):
                     txns.append(txn)
 
                     buy = True
-
-                # Wick stop
-                # elif (top_wick <= -10):
-                #     txn = trade(stock, buy, 5000, txn)
-                #     pnl = compute_pnl(txn)
-                #     txn['pnl'] = pnl
-                #     txn['gl'] = pnl > 0 and 'GAIN' or '----'
-                #     txn['sold_by'] = 'Wickstop'
-                #     txns.append(txn)
-
-                #     buy = True
-
-                # Trail stop
-                # elif (stock['close'] <= stock['close_10_ema']):
-                #     txn = trade(stock, buy, 5000, txn)
-                #     pnl = compute_pnl(txn)
-                #     txn['pnl'] = pnl
-                #     txn['sold_by'] = 'Trailstop'
-                #     txns.append(txn)
-
-                #     buy = True
 
     return txns
 
